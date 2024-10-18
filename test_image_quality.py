@@ -4,7 +4,7 @@ from PIL import Image, ImageOps
 import os
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
-from resize import process_images  # Import your existing resizing function
+from process_images import process_images_simple, process_images_padding, process_images_content_aware  # Import various methods
 
 # Directories
 frozen_test_dir = "/Users/jameswinslow/Documents/Projects/DataScience/IGPhotoResizer/frozen_test_images"
@@ -38,16 +38,16 @@ def calculate_metrics(original_img_path, processed_img_path):
 
     return ssim_value, mse_value
 
-# Function to evaluate and aggregate results across multiple runs
-def evaluate_images(n_runs=50, set_size=10):
+# Function to evaluate different methods and aggregate results
+def evaluate_images(method, process_method, n_runs=5):
     results = []
     
     for i in range(n_runs):
-        print(f"Starting run {i + 1}...")
+        print(f"Starting run {i + 1} for {method}...")
         start_time = time.time()  # Start timing
 
-        # Run the resizing process
-        process_images(frozen_test_dir, test_output_dir)
+        # Run the selected resizing method
+        process_method(frozen_test_dir, test_output_dir)
 
         # Evaluate each image in the frozen test folder
         for file_name in os.listdir(frozen_test_dir):
@@ -58,6 +58,7 @@ def evaluate_images(n_runs=50, set_size=10):
                 ssim_value, mse_value = calculate_metrics(original_img_path, processed_img_path)
                 results.append({
                     'Run': i + 1,
+                    'Method': method,
                     'Image': file_name,
                     'SSIM': ssim_value,
                     'MSE': mse_value
@@ -65,18 +66,27 @@ def evaluate_images(n_runs=50, set_size=10):
 
         end_time = time.time()  # End timing
         runtime = end_time - start_time
-        print(f"Run {i + 1} completed in {runtime:.2f} seconds")
+        print(f"Run {i + 1} for {method} completed in {runtime:.2f} seconds")
 
-    # Aggregate results into a DataFrame
-    results_df = pd.DataFrame(results)
-    print("Aggregated Results for Multiple Runs:")
-    print(results_df)
-
-    # Save results to a CSV file
-    results_df.to_csv('aggregated_results.csv', index=False)
-
-    return results_df
+    return results
 
 if __name__ == "__main__":
-    # Run the experiment with 50 iterations of 10 images each
-    evaluate_images(n_runs=5, set_size=10)
+    all_results = []
+
+    # Run evaluation for simple resizing method
+    all_results.extend(evaluate_images("Simple Resize", process_images_simple, n_runs=5))
+
+    # Run evaluation for padding resizing method
+    all_results.extend(evaluate_images("Padding Resize", process_images_padding, n_runs=5))
+
+    # Run evaluation for content-aware resizing method
+    all_results.extend(evaluate_images("Content-Aware Resize", process_images_content_aware, n_runs=5))
+
+    # Convert results to DataFrame
+    results_df = pd.DataFrame(all_results)
+
+    # Save results to CSV
+    results_csv_path = os.path.join(os.path.dirname(__file__), "resizing_comparison_results.csv")
+    results_df.to_csv(results_csv_path, index=False)
+
+    print(f"All results saved to {results_csv_path}")
