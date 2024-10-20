@@ -51,3 +51,25 @@ def process_images_content_aware(input_dir, output_dir):
             output_path = os.path.join(output_dir, file_name)
             cv2.imwrite(output_path, img_resized)
             print(f"Content-aware resize completed for: {file_name}")
+
+# Main function to run the resizing on different methods
+def main(test_set='frozen_real_images'):
+    input_dir = f'/Users/jameswinslow/Documents/Projects/DataScience/IGPhotoResizer/{test_set}'
+    
+    # Output directories for different methods
+    output_dir_simple = '/Users/jameswinslow/Documents/Projects/DataScience/IGPhotoResizer/output/simple_resize'
+    output_dir_padding = '/Users/jameswinslow/Documents/Projects/DataScience/IGPhotoResizer/output/padding_resize'
+    output_dir_content_aware = '/Users/jameswinslow/Documents/Projects/DataScience/IGPhotoResizer/output/content_aware_resize'
+
+    # Running all methods
+    print("Starting Simple Resize...")
+    process_images_simple(input_dir, output_dir_simple)
+    
+    print("Starting Padding Resize...")
+    process_images_padding(input_dir, output_dir_padding)
+    
+    print("Starting Content-Aware Resize...")
+    process_images_content_aware(input_dir, output_dir_content_aware)
+
+if __name__ == '__main__':
+    main()

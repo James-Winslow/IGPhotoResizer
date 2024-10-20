@@ -1,34 +1,56 @@
-# IGPhotoResizer
+# Instagram Photo Resizer & Quality Optimizer
+This project aims to optimize image resizing techniques for Instagram multi-photo posts, ensuring that images maintain their original quality as much as possible when resized.
 
-## Overview
-This project provides a robust tool for resizing and padding a set of images for optimal posting on Instagram using the multi-photo feature. The tool ensures that vertical and horizontal images with different aspect ratios maintain their original orientation without automatic scaling issues from Instagram.
+## Project Overview
+Instagram often resizes images for multi-photo posts based on the first image selected, which can lead to unwanted scaling and quality loss. This project explores various resizing methods to retain the image quality while adapting to the specific format constraints of Instagram. The project includes the following methods:
 
-It now includes functionality to evaluate different resizing strategies using a frozen test set of images, with metrics such as SSIM (Structural Similarity Index Measure) and MSE (Mean Squared Error) to assess image quality.
+Simple Resize: Resizes images directly to a fixed dimension using LANCZOS resampling.
+Padding Resize: Adds padding around the image to create uniform dimensions while maintaining the aspect ratio.
+Content-Aware Resize: A more advanced method that resizes the image with minimal distortion, maintaining the content quality.
+## Methods and Results
+Methods
+We tested three main resizing methods:
 
-## How It Works
-Image Resizing: The tool resizes photos to meet Instagram's aspect ratio requirements (4:5) while preserving important parts of the image.
-Padding: Adds padding based on the image's dominant colors, maintaining aesthetic coherence and avoiding black bars.
-Frozen Test Set: A frozen set of randomly generated images is used to consistently test different resizing strategies, ensuring reliable performance evaluation.
-Quality Metrics: The resizing methods are evaluated based on SSIM and MSE to ensure minimal loss of quality during resizing.
+Simple Resize: Direct resizing of images to a fixed size.
+Padding Resize: Adding padding to maintain the aspect ratio while ensuring images fit within the Instagram constraints.
+Content-Aware Resize: Uses content-aware resizing techniques to avoid distortion while scaling.
+Results
+The results were evaluated using the following metrics:
 
-## How to Use
-1. Run create_frozen_test_set.py to generate and freeze a set of images for testing.
-2. Run test_image_quality.py to evaluate image resizing strategies and generate quality metrics over multiple runs.
-3. Upload the processed images to Instagram via the multi-photo post feature.
+SSIM (Structural Similarity Index): Measures how similar the resized image is to the original.
+MSE (Mean Squared Error): Measures the error between the original and resized images.
+Results for both test-generated images and real-world images are included in the CSV file resizing_comparison_results_real_images.csv. Note: The actual real-world images are not included in the repository for privacy reasons.
+
+You can find the detailed results and comparison in the CSV file located in the results folder.
+
+## Usage
+Installation
+To use this project, you need the following dependencies:
+
+Python 3.x
+PIL (Pillow)
+OpenCV
+Numpy
+Scikit-Image
+Pandas
 
 ## Running the Code
-'#' Navigate to the project directory
-cd IGPhotoResizer
+Running the Project
+To resize images using the different methods, follow these steps:
 
-'#' Install the required dependencies
-pip install -r requirements.txt
+Place your images in a folder (for example, frozen_real_images/).
+Update the input_dir and output_dir paths in the script to reflect the folder locations.
+To run the resizing methods and save the results:
+python main.py
 
-'#' Run the scripts as needed
-python create_frozen_test_set.py  # Create a frozen set of test images
-python test_image_quality.py      # Run the resizing and evaluation process
+The resized images will be saved in the specified output directory, and the results will be saved in the resizing_comparison_results_real_images.csv.
 
+Real-World Image Testing
+Real-world images were tested as part of the project to assess how the resizing methods perform on common use-case images. The results from this testing are included in the results CSV file but the images themselves are not provided in this repository.
 
-
-## Future Plans
-Machine Learning Integration: We plan to integrate machine learning to optimize the resizing strategy based on the test results.
-Multiple Resizing Methods: Testing and comparing multiple resizing algorithms to determine the best quality-preserving method.
+Future Enhancements
+More Resizing Techniques: Explore additional resizing algorithms, such as neural network-based upscaling.
+Batch Processing Interface: Develop a simple UI for batch image processing.
+Instagram API Integration: Directly post resized images to Instagram.
+Contribution
+Feel free to fork this repository and contribute! Please submit pull requests with detailed descriptions of the changes made.
