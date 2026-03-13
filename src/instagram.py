@@ -111,24 +111,19 @@ def instagram_resize(
 
 
 def run_instagram_pipeline(
-    image: Image.Image,
+    image,
     post_type: str = "portrait",
     jpeg_quality: int = INSTAGRAM_JPEG_QUALITY
 ) -> Image.Image:
     """
-    Apply the full simulated Instagram pipeline to an image:
-        Step 1: Resize to Instagram target dimensions
-        Step 2: JPEG compress at Instagram quality
-
-    This represents what your image looks like after Instagram processes it.
-    The key insight: we apply this pipeline AFTER our preprocessing step,
-    so the full experiment flow is:
-
-        original -> [our resize method] -> [instagram pipeline] -> measure quality
-
-    This lets us ask: which preprocessing method produces the best final
-    image quality after surviving Instagram's compression?
+    Apply the full simulated Instagram pipeline to an image.
+    Accepts either a PIL Image or a ResizeResult.
     """
+    # Unwrap ResizeResult if needed
+    from src.methods import ResizeResult
+    if isinstance(image, ResizeResult):
+        image = image.image
+
     print(f"  Running Instagram pipeline (post_type={post_type}, "
           f"jpeg_quality={jpeg_quality})")
     step1 = instagram_resize(image, post_type)
