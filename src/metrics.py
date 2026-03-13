@@ -15,33 +15,43 @@ from skimage.metrics import structural_similarity as skimage_ssim
 
 def get_content_region(
     original: Image.Image,
-    resized: Image.Image
+    resized_result,  # ResizeResult or PIL Image
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Extract the comparable content region from both images.
+    Extract the comparable content region from both images for metric computation.
 
-    The core problem with naive metric computation: if the resized image has
-    padding (black or colored borders), comparing it pixel-for-pixel against
-    the original includes those border pixels in the score. This artificially
-    penalizes padding resize and makes cross-method comparison unfair.
+    If resized_result has a content_box (padding was added), we crop that region
+    out of the processed image and compare it directly against the original —
+    no round-trip resize needed, no border bleed.
 
-    Our solution: always resize the processed image back to the original
-    dimensions using LANCZOS before computing metrics. This is NOT the same
-    as the bug in the legacy code — the legacy code used the default
-    nearest-neighbor resampling filter for this step, which introduced its
-    own artifacts. We use LANCZOS, which is the highest-quality option.
+    If content_box is None (simple resize or seam carving), we resize the
+    processed image back to original dimensions using LANCZOS for comparison.
 
-    This means we are measuring: "how much information was lost and then
-    recovered by round-tripping through the resize method?" — which is
-    exactly the right question for comparing methods on equal footing.
-
-    Returns both images as float64 numpy arrays in range [0, 255].
+    This is the correct fix for the metric bias identified in the first
+    experiment run, where padding resize appeared to score dramatically worse
+    than simple resize purely because border pixels were contaminating the score.
     """
-    # Bring resized image back to original dimensions for fair comparison
-    resized_matched = resized.resize(original.size, Image.Resampling.LANCZOS)
+    from src.methods import ResizeResult
+
+    if isinstance(resized_result, ResizeResult):
+        processed_image = resized_result.image
+        content_box = resized_result.content_box
+    else:
+        # backwards compatibility: accept plain PIL Image
+        processed_image = resized_result
+        content_box = None
+
+    if content_box is not None:
+        # Crop content region and resize to original dimensions for comparison
+        x0, y0, x1, y1 = content_box
+        content_crop = processed_image.crop(content_box)
+        content_matched = content_crop.resize(original.size, Image.Resampling.LANCZOS)
+    else:
+        # No padding — round-trip resize back to original dimensions
+        content_matched = processed_image.resize(original.size, Image.Resampling.LANCZOS)
 
     original_array = np.array(original, dtype=np.float64)
-    resized_array  = np.array(resized_matched, dtype=np.float64)
+    resized_array  = np.array(content_matched, dtype=np.float64)
 
     return original_array, resized_array
 
@@ -185,29 +195,23 @@ def compute_ssim(
 # ---------------------------------------------------------------------------
 # Combined metric computation
 # ---------------------------------------------------------------------------
-
 def compute_all_metrics(
     original: Image.Image,
-    resized: Image.Image,
+    resized_result,  # ResizeResult or PIL Image
     method_name: str,
     image_name: str
 ) -> dict:
-    """
-    Compute all three metrics for a single original/resized pair.
-    Returns a dict suitable for building a results DataFrame row.
-    """
     print(f"  Computing metrics for [{method_name}] on [{image_name}]")
-
-    mse   = compute_mse(original, resized)
-    psnr  = compute_psnr(original, resized)
-    ssim  = compute_ssim(original, resized)
+    mse  = compute_mse(original, resized_result)
+    psnr = compute_psnr(original, resized_result)
+    ssim = compute_ssim(original, resized_result)
 
     return {
-        "image":      image_name,
-        "method":     method_name,
-        "mse":        mse,
-        "psnr_db":    psnr,
-        "ssim":       ssim,
+        "image":       image_name,
+        "method":      method_name,
+        "mse":         mse,
+        "psnr_db":     psnr,
+        "ssim":        ssim,
         "orig_width":  original.size[0],
         "orig_height": original.size[1],
     }
