@@ -2,3 +2,27 @@
 .DS_Store
 __pycache__/
 *.pyc
+
+```
+# Output directories (generated files, not source)
+Output/
+test_output/
+resized_images/
+
+# Virtual environments
+venv/
+.venv/
+env/
+cleanenv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Real images (privacy)
+frozen_real_images/
