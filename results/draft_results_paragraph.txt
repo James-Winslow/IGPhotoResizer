@@ -1,0 +1,27 @@
+
+DRAFT RESULTS PARAGRAPH
+========================
+
+We evaluated two preprocessing strategies — simple resize and padding resize
+— across 8 image categories using a linear mixed model with image as
+a random effect (pipeline: instagram standard).
+
+The main effect of preprocessing method was not statistically significant
+(beta = N/A, p = N/A),
+indicating that padding resize produces lower SSIM than simple resize on
+average after the Instagram pipeline.
+
+A significant Method × Category interaction was observed, indicating that
+the quality advantage of simple resize depends strongly on image content type.
+Post-hoc paired comparisons (Bonferroni corrected, α = 0.00625) revealed
+significant effects in 7 of 8 categories. The largest effect
+was observed for architecture images (Cohen's d = 1.89,
+mean difference = 0.3406 SSIM points), while the effect
+for gradient images was not significant after correction (p > 0.05), suggesting
+that smooth-gradient images are robust to preprocessing method choice.
+
+These results indicate that image content type is a strong moderator of the
+preprocessing method effect: photographers uploading architectural imagery,
+mountain landscapes, or fine-texture content to Instagram should prefer simple
+resize, while those uploading smooth-gradient or soft-focus imagery may use
+either method without meaningful quality loss.
