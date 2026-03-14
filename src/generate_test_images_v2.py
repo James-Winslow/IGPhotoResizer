@@ -118,14 +118,28 @@ def generate_nebula(width: int, height: int, rng: np.random.Generator) -> Image.
         color = (brightness, brightness, int(brightness * rng.uniform(0.8, 1.0)))
         draw.ellipse([x-size, y-size, x+size, y+size], fill=color)
 
-    # Bright nebula core
-    core_x = rng.integers(width // 4, 3 * width // 4)
-    core_y = rng.integers(height // 4, 3 * height // 4)
-    core_color = tuple(rng.integers(100, 200, size=3).tolist())
-    draw.ellipse([core_x-50, core_y-50, core_x+50, core_y+50],
-                 fill=core_color)
-    img = img.filter(ImageFilter.GaussianBlur(radius=3))
-    return img
+    # Nebula core: large diffuse glow, not a distinct object
+    # Apply multiple passes of blur to dissolve it into the background
+    img = img.filter(ImageFilter.GaussianBlur(radius=8))
+
+    # Add soft brightness enhancement at core region using blend
+    core_x = rng.integers(width // 3, 2 * width // 3)
+    core_y = rng.integers(height // 3, 2 * height // 3)
+    core_radius = rng.integers(min(width, height) // 5,
+                               min(width, height) // 3)
+
+    # Create a soft radial glow mask
+    xx, yy = np.meshgrid(np.arange(width), np.arange(height))
+    dist = np.sqrt((xx - core_x)**2 + (yy - core_y)**2)
+    glow = np.exp(-dist**2 / (2 * (core_radius**2)))
+    glow = (glow * 60).astype(np.uint8)
+
+    img_array = np.array(img, dtype=np.int16)
+    img_array[:,:,0] = np.clip(img_array[:,:,0] + glow, 0, 255)
+    img_array[:,:,1] = np.clip(img_array[:,:,1] + glow // 2, 0, 255)
+    img_array[:,:,2] = np.clip(img_array[:,:,2] + glow, 0, 255)
+
+    return Image.fromarray(img_array.astype(np.uint8))
 
 
 def generate_forest(width: int, height: int, rng: np.random.Generator) -> Image.Image:
