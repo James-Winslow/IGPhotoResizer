@@ -133,20 +133,28 @@ def run_single_image_test(
     # ---------------------------------------------------------------------------
     print("\nGenerating comparison grid...")
 
-    n_cols = 5 if include_instagram else 3
-    fig = plt.figure(figsize=(4 * n_cols, 8))
+    fig = plt.figure(figsize=(20, 10))
     fig.patch.set_facecolor(PALETTE["background"])
 
-    gs = gridspec.GridSpec(2, n_cols, figure=fig,
-                           hspace=0.4, wspace=0.05)
+    # Layout: 2 rows × 4 cols
+    # Col 0: original (spans both rows)
+    # Col 1: preprocessed (row 0 = simple, row 1 = padding)
+    # Col 2: after instagram (row 0 = simple, row 1 = padding)
+    # Col 3: difference map (row 0 = simple, row 1 = padding)
+
+    gs = gridspec.GridSpec(
+        2, 4, figure=fig,
+        hspace=0.35, wspace=0.08,
+        width_ratios=[1, 1, 1, 1]
+    )
 
     def add_image_panel(ax, img, title, subtitle="", border_color=None):
         ax.imshow(np.array(img))
-        ax.set_title(title, fontsize=9, fontweight="bold",
-                     color=PALETTE["text"], pad=4)
+        ax.set_title(title, fontsize=10, fontweight="bold",
+                     color=PALETTE["text"], pad=6)
         if subtitle:
-            ax.text(0.5, -0.08, subtitle, transform=ax.transAxes,
-                    ha="center", fontsize=7.5, color=PALETTE["text"])
+            ax.text(0.5, -0.06, subtitle, transform=ax.transAxes,
+                    ha="center", fontsize=8.5, color=PALETTE["text"])
         ax.axis("off")
         if border_color:
             for spine in ax.spines.values():
@@ -154,75 +162,70 @@ def run_single_image_test(
                 spine.set_edgecolor(border_color)
                 spine.set_linewidth(3)
 
-    # Row 0: simple resize
-    # Row 1: padding resize
+    # Col 0: original spanning both rows
+    ax_orig = fig.add_subplot(gs[:, 0])
+    add_image_panel(
+        ax_orig, original,
+        "Original",
+        f"{original.size[0]}×{original.size[1]}"
+    )
+
     for row, (method_name, color, label) in enumerate([
         ("simple_resize",  PALETTE["simple_resize"],  "Simple Resize"),
         ("padding_resize", PALETTE["padding_resize"], "Padding Resize"),
     ]):
-        data = results[method_name]
-        m_pre = data["metrics_pre"]
-
-        # Col 0: original (only show once, row 0)
-        if row == 0:
-            ax_orig = fig.add_subplot(gs[0, 0])
-            add_image_panel(ax_orig, original,
-                            "Original",
-                            f"{original.size[0]}×{original.size[1]}")
-            # blank for row 1 col 0
-            ax_blank = fig.add_subplot(gs[1, 0])
-            ax_blank.axis("off")
-        else:
-            pass
+        data   = results[method_name]
+        m_pre  = data["metrics_pre"]
+        pre_img = data["result"].image
 
         # Col 1: preprocessed
         ax_pre = fig.add_subplot(gs[row, 1])
-        pre_img = data["result"].image
-        ssim_pre = m_pre["ssim"]
-        psnr_pre = m_pre["psnr_db"]
         add_image_panel(
             ax_pre, pre_img,
-            f"{label}",
-            f"SSIM {ssim_pre:.4f} | PSNR {psnr_pre:.1f}dB",
+            label,
+            f"SSIM {m_pre['ssim']:.4f} | PSNR {m_pre['psnr_db']:.1f}dB",
             border_color=color
         )
 
         if include_instagram:
+            ig_img = data["ig_image"]
+            m_ig   = data["metrics_ig"]
+
             # Col 2: after Instagram
             ax_ig = fig.add_subplot(gs[row, 2])
-            ig_img  = data["ig_image"]
-            m_ig    = data["metrics_ig"]
-            ssim_ig = m_ig["ssim"]
-            psnr_ig = m_ig["psnr_db"]
             add_image_panel(
                 ax_ig, ig_img,
                 f"{label} + Instagram",
-                f"SSIM {ssim_ig:.4f} | PSNR {psnr_ig:.1f}dB",
+                f"SSIM {m_ig['ssim']:.4f} | PSNR {m_ig['psnr_db']:.1f}dB",
                 border_color=color
             )
 
-            # Col 3: difference map (original vs after Instagram)
+            # Col 3: difference map
             ax_diff = fig.add_subplot(gs[row, 3])
-            orig_arr = np.array(original.resize(ig_img.size,
-                                Image.Resampling.LANCZOS), dtype=np.float32)
+            orig_arr = np.array(
+                original.resize(ig_img.size, Image.Resampling.LANCZOS),
+                dtype=np.float32
+            )
             ig_arr   = np.array(ig_img, dtype=np.float32)
             diff     = np.abs(orig_arr - ig_arr).mean(axis=2)
             diff_norm = diff / diff.max() if diff.max() > 0 else diff
-            im = ax_diff.imshow(diff_norm, cmap="hot", vmin=0, vmax=1)
-            ax_diff.set_title(f"Difference Map\n{label}",
-                              fontsize=9, fontweight="bold",
-                              color=PALETTE["text"], pad=4)
+            ax_diff.imshow(diff_norm, cmap="hot", vmin=0, vmax=1)
+            ax_diff.set_title(
+                f"Difference Map\n{label}",
+                fontsize=10, fontweight="bold",
+                color=PALETTE["text"], pad=6
+            )
             ax_diff.axis("off")
 
     fig.suptitle(
         f"Resize Method Comparison: {image_name}\n"
         f"Original: {original.size[0]}×{original.size[1]}  →  "
         f"Target: {TARGET_WIDTH}×{TARGET_HEIGHT}",
-        fontsize=12, fontweight="bold",
-        color=PALETTE["text"], y=1.01
+        fontsize=13, fontweight="bold",
+        color=PALETTE["text"], y=1.02
     )
 
-    stem = os.path.splitext(image_name)[0]
+    stem        = os.path.splitext(image_name)[0]
     output_path = os.path.join(output_dir, f"{stem}_comparison.png")
     plt.savefig(output_path, dpi=150, bbox_inches="tight",
                 facecolor=PALETTE["background"])
