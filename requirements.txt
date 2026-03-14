@@ -1,1 +1,9 @@
-Pillow
+pillow
+opencv-python
+scikit-image
+numpy
+pandas
+colorthief
+matplotlib
+seaborn
+scipy
