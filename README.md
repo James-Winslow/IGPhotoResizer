@@ -6,117 +6,135 @@ own compression and resizing pipeline.
 
 **The short version:** padding resize and simple resize perform identically
 before upload. After Instagram processes your image, simple resize preserves
-significantly more quality. The reason is surprisingly non-obvious.
+significantly more quality — and the damage from padding resize depends
+heavily on what kind of image you're uploading.
 
 ---
 
-## The Problem
+## The Core Finding
 
-Instagram resizes images for multi-photo posts based on the first image
-selected. When you upload a non-square photo, Instagram applies its own
-resize and JPEG compression on top of whatever you uploaded. This means
-your preprocessing choice doesn't just affect the image you upload — it
-affects the image that *survives* Instagram's pipeline.
+Most Instagram photography guides recommend padding your images to a square
+with colored borders before uploading, to prevent Instagram from cropping or
+distorting your content. This project tests whether that advice holds up
+under measurement.
 
-Most guides recommend padding your images to a square with white or black
-borders before uploading, to prevent Instagram from cropping or distorting
-your content. This project tests whether that advice holds up under
-measurement.
+It doesn't.
 
----
-
-## Methods
-
-Three preprocessing strategies were evaluated:
-
-**Simple Resize** resizes the image directly to 1080×1080 using LANCZOS
-resampling. Does not preserve aspect ratio — content is squashed to fill
-the square frame.
-
-**Padding Resize** scales the image proportionally to fit within 1080×1080,
-then fills the remaining space with the image's dominant color. Preserves
-aspect ratio with no content distortion.
-
-**Seam Carving** (in progress) removes low-energy pixel seams to resize
-content-aware. True content-aware resize — preserves important content
-by intelligently selecting which pixels to remove.
-
-### Evaluation
-
-Each method was evaluated using three image quality metrics:
-
-- **SSIM** (Structural Similarity Index) — measures perceptual similarity
-  by comparing local luminance, contrast, and structure. Based on a
-  normalized local covariance, essentially Pearson's r between image patches.
-- **PSNR** (Peak Signal-to-Noise Ratio) — logarithmic transform of MSE,
-  expressed in decibels. Values above 40 dB indicate excellent quality.
-- **MSE** (Mean Squared Error) — average squared pixel difference.
-  Perceptually non-uniform but useful as a baseline.
-
-Metrics were computed over the **content region only** — padding borders
-are explicitly excluded from evaluation so methods are compared fairly.
-
-### Instagram Pipeline Simulation
-
-After preprocessing, each image was passed through a simulated Instagram
-pipeline: resize to Instagram's target dimensions (1080×1350 portrait),
-then JPEG compress at quality 75 (Instagram's approximate setting). This
-was tested across five pipeline variants covering different post types and
-compression levels.
-
-### Test Set
-
-50 synthetic images generated with a fixed random seed (reproducible),
-ranging from 500×500 to 1000×1000 pixels with randomized aspect ratios,
-solid color backgrounds, and overlapping geometric shapes.
+Padding resize and simple resize are statistically indistinguishable before
+upload (SSIM difference of 0.0003). After Instagram's pipeline, simple resize
+outperforms padding resize on **95 out of 120 images** across every image
+category tested. The effect is not subtle — for architectural and landscape
+imagery, padding resize degrades quality by more than 0.34 SSIM points after
+upload.
 
 ---
 
-## Results
+## Why Padding Resize Fails
 
-### Before Instagram: methods are equivalent
-
-Both methods preserve image quality equally well before upload. Mean SSIM
-of 0.9987 for both simple and padding resize, with a difference of 0.000021
-— statistically detectable at n=50 but practically meaningless.
-
-### After Instagram: simple resize wins decisively
-
-| Pipeline | Simple Resize SSIM | Padding Resize SSIM | Difference |
-|---|---|---|---|
-| Preprocessing only | 0.9987 | 0.9987 | +0.000021 |
-| Instagram standard (Q75) | 0.9963 | 0.9150 | +0.0814 |
-| Instagram high quality (Q85) | 0.9973 | 0.9150 | +0.0823 |
-| Instagram low quality (Q70) | 0.9958 | 0.9149 | +0.0810 |
-| Instagram landscape | 0.9860 | 0.9134 | +0.0726 |
-
-Simple resize outperformed padding resize on **50 out of 50 images** after
-the Instagram pipeline. Both paired t-test and Wilcoxon signed-rank test
-confirm the difference is highly significant (p < 0.0001) across all
-pipeline variants.
-
-### Why padding resize fails downstream
-
-Padding resize adds colored borders to reach the target dimensions.
-Instagram then resizes that padded image to its own target — meaning the
-content gets scaled *twice*, while the border pixels consume part of the
-available pixel budget. Simple resize fills the entire frame with content,
-so Instagram's pipeline applies only one total downscale.
+Padding resize adds colored borders to reach the target dimensions. Instagram
+then resizes that padded image to its own target — meaning your content gets
+scaled *twice*, while the border pixels consume part of the available pixel
+budget. Simple resize fills the entire frame with content, so Instagram's
+pipeline applies only one total downscale.
 
 This is a case where the preprocessing strategy that looks better in
 isolation (padding preserves aspect ratio; simple resize distorts it)
 performs worse in the real-world pipeline it was designed for.
 
-### Aspect ratio moderately predicts degradation
+---
 
-Images with more extreme aspect ratios (further from 1:1 square) showed
-slightly more quality degradation after the Instagram pipeline
-(Pearson r = 0.353). More non-square images have larger border areas,
-giving Instagram's resize more border pixels to mangle. However, aspect
-ratio explains only a moderate share of the variance — the degradation
-is largely consistent regardless of how extreme the original dimensions are.
+## Experimental Design
 
-![SSIM by Pipeline](results/plots/ssim_by_pipeline.png)
+### Test Set
+
+A fully crossed factorial design: **8 image categories × 5 aspect ratios ×
+3 replicates = 120 images**.
+
+**Image categories** (ordered from least to most padding degradation):
+
+| Category | Description | SSIM diff (simple − padding) |
+|---|---|---|
+| Gradient | Smooth tonal transitions | +0.011 (n.s.) |
+| Nebula | Deep space, soft color fields | +0.015 *** |
+| Forest | Fine organic texture, green dominance | +0.052 *** |
+| Coral | Color complexity, irregular edges | +0.077 *** |
+| Abstract texture | Marble, fabric, sand patterns | +0.198 *** |
+| Macro biology | Cellular and radial structures | +0.203 *** |
+| Mountain | Horizontal band structure | +0.238 *** |
+| Architecture | Hard geometric edges, building grids | +0.341 *** |
+
+**Aspect ratios:** very wide (2:1), wide (4:3), square (1:1), portrait (3:4),
+very tall (1:2).
+
+All images are procedurally generated with fixed random seeds — fully
+reproducible without committing real photographs.
+
+### Evaluation
+
+Each image was processed through two preprocessing methods and six pipeline
+variants. Metrics were computed over the content region only — padding borders
+are excluded from evaluation.
+
+**Metrics:**
+- **SSIM** — Structural Similarity Index. Measures perceptual similarity by
+  comparing local luminance, contrast, and structure. The structure component
+  is essentially Pearson's r between image patches.
+- **PSNR** — Peak Signal-to-Noise Ratio. Log-scaled MSE, expressed in dB.
+  Values above 40 dB indicate excellent quality.
+- **MSE** — Mean Squared Error. Perceptually non-uniform baseline.
+
+**Pipeline variants simulated:**
+- Preprocessing only (no Instagram)
+- Instagram standard (resize to portrait 1080×1350, JPEG Q75)
+- Instagram high quality (Q85)
+- Instagram low quality (Q70)
+- Instagram square (1080×1080, Q75)
+- Instagram landscape (1080×566, Q75)
+
+### Statistical Analysis
+
+Paired t-test and Wilcoxon signed-rank test comparing simple resize vs
+padding resize per pipeline stage. Per-category tests run separately.
+All reported effects significant at p < 0.001 unless noted.
+
+---
+
+## Results
+
+### Main effect: simple resize wins after Instagram
+
+| Pipeline | Simple SSIM | Padding SSIM | Difference |
+|---|---|---|---|
+| Preprocessing only | 0.9966 | 0.9963 | +0.0003 (n.s.) |
+| Instagram standard (Q75) | 0.9908 | 0.8502 | +0.1406 *** |
+| Instagram high quality (Q85) | 0.9922 | 0.8512 | +0.1410 *** |
+| Instagram low quality (Q70) | 0.9894 | 0.8490 | +0.1404 *** |
+| Instagram landscape | 0.9655 | 0.8393 | +0.1262 *** |
+
+### Category × Method interaction
+
+The quality advantage of simple resize is strongly moderated by image
+content. For smooth gradient images, there is no significant difference.
+For architectural images with hard geometric edges, padding resize loses
+0.34 SSIM points after Instagram — visually obvious degradation.
+
+![SSIM by Category](results/plots/ssim_by_category.png)
+
+### Aspect ratio effect
+
+Square images (1:1) show both methods performing identically — the control
+condition that confirms the evaluation logic. Very wide and very tall images
+show the largest padding degradation because they require the most border
+area, giving Instagram's second resize more border pixels to mangle.
+
+![SSIM by Aspect Ratio](results/plots/ssim_by_aspect_ratio.png)
+
+### Per-image consistency
+
+Simple resize outperformed padding resize on 95 of 120 images after the
+Instagram pipeline. The one case where padding resize won involved a nearly
+square image where almost no padding was added.
+
 ![Per-Image Scatter](results/plots/per_image_scatter.png)
 
 ---
@@ -125,19 +143,24 @@ is largely consistent regardless of how extreme the original dimensions are.
 ```
 IGPhotoResizer/
 ├── src/
-│   ├── methods.py          # Resize implementations (simple, padding, seam carving)
-│   ├── metrics.py          # SSIM, PSNR, MSE with correct ROI handling
-│   └── instagram.py        # Instagram pipeline simulation
+│   ├── methods.py              # Resize implementations (simple, padding, seam carving)
+│   ├── metrics.py              # SSIM, PSNR, MSE with correct ROI handling
+│   ├── instagram.py            # Instagram pipeline simulation
+│   ├── generate_test_images_v2.py  # Synthetic test set generator
+│   └── test_single_image.py    # Test any photo through all methods
 ├── experiments/
-│   ├── run_experiment.py   # Runs all methods × all images × all pipelines
-│   └── analyze_results.py  # Summary stats, statistical tests, visualizations
+│   ├── run_experiment.py       # Runs full factorial experiment
+│   └── analyze_results.py      # Summary stats, tests, visualizations
+├── test_sets/
+│   ├── synthetic_v1/           # Original 50-image test set
+│   ├── synthetic_v2/           # Factorial test set (120 images, 8 categories)
+│   └── real_unsplash/          # Real photo test set (gitignored, local only)
 ├── results/
-│   ├── plots/              # Generated visualizations
+│   ├── plots/                  # Generated visualizations
 │   ├── summary_statistics.csv
 │   └── statistical_tests.csv
-├── notebooks/              # Development notebooks
-├── legacy/                 # Original code preserved for reference
-└── frozen_test_images/     # Fixed synthetic test set (seed=11, reproducible)
+├── notebooks/                  # Development notebooks
+└── legacy/                     # Original code preserved for reference
 ```
 
 ---
@@ -150,14 +173,17 @@ pip install pillow opencv-python scikit-image numpy pandas \
 
 ## Usage
 ```bash
-# Run full experiment (all methods, all pipeline variants)
+# Run full experiment on v2 test set
 python experiments/run_experiment.py
 
-# Skip seam carving (much faster)
+# Skip seam carving (faster)
 python experiments/run_experiment.py --skip-seam-carving
 
-# Preprocessing quality only, no Instagram simulation
-python experiments/run_experiment.py --no-instagram
+# Run on original v1 test set
+python experiments/run_experiment.py --input-dir test_sets/synthetic_v1
+
+# Test a single image
+python src/test_single_image.py --image path/to/your/photo.jpg
 
 # Analyze results and generate plots
 python experiments/analyze_results.py
@@ -167,51 +193,51 @@ python experiments/analyze_results.py
 
 ## Limitations and Honest Caveats
 
-- **Synthetic test images only (so far).** The test set uses programmatically
-  generated images with geometric shapes. Results on real photographs —
-  especially portraits, landscapes, and fine textures — may differ.
+- **Synthetic images only (so far).** Results on real photographs —
+  especially portraits, fine textures, and high dynamic range scenes —
+  are planned for v3 using a curated Unsplash test set.
 - **Instagram pipeline is approximated.** Instagram's exact compression
   parameters are not public. Quality 75 JPEG is a community estimate.
-- **Seam carving not yet evaluated.** The implementation exists but the
-  full experiment has not been run due to computational cost.
-- **SSIM is grayscale-only in this implementation.** Color distortion from
-  the resize pipeline is not captured by the current metrics.
+- **Seam carving not yet fully evaluated.** The implementation exists but
+  the full factorial experiment has not been run due to computational cost.
+  Vectorized DP implementation planned for v3.
+- **SSIM is grayscale-only.** Color distortion from the resize pipeline is
+  not captured. Color-space SSIM planned for v3.
 - **No perceptual study.** SSIM correlates with human perception but does
-  not replace it. A human preference study is planned.
+  not replace it. A human preference study is planned for v4.
 
 ---
 
 ## Roadmap
 
-### v2 — Real images and seam carving
-- [ ] Run experiment on real photograph test set
-- [ ] Complete seam carving evaluation with energy function comparison
-- [ ] Add color-space SSIM (evaluate all three RGB channels)
-- [ ] Add LPIPS (learned perceptual metric using neural features)
+### v3 — Real images, seam carving, color metrics
+- [ ] Curated Unsplash test set across 8 categories
+- [ ] Seam carving evaluation with vectorized DP
+- [ ] Color-space SSIM (evaluate all three RGB channels)
+- [ ] LPIPS (learned perceptual metric)
+- [ ] Mixed effects model: SSIM ~ Method + Category + AspectRatio + Method:Category
 
-### v3 — Richer preprocessing
-- [ ] Edge-blurred padding (mirror image edges outward instead of flat color)
-- [ ] Investigate whether dominant color padding reduces degradation vs
-      white padding on real images
-
-### v4 — Outpainting borders
-- [ ] Use a generative model to fill borders with scene-consistent content
-- [ ] Compare outpainting vs flat color vs edge blur on human preference study
+### v4 — Richer preprocessing
+- [ ] Edge-blurred padding (mirror image edges outward)
+- [ ] Outpainting borders via generative model
+- [ ] Human perceptual study (A/B preference, 20+ image pairs)
 
 ### v5 — Full paper
-- [ ] Human perceptual study (A/B preference on 20+ image pairs)
 - [ ] Formal write-up: introduction, related work, methods, results, discussion
 - [ ] Bayesian analysis of per-image results
-- [ ] Publication target: arXiv or undergraduate/graduate journal
+- [ ] Publication target: arXiv or imaging journal
 
 ---
 
-## A Note on Methods
+## A Note on Methodology
 
 An earlier version of this project contained a significant evaluation error:
-metrics were computed by resizing the processed image back to original
-dimensions using the default (nearest-neighbor) resampling filter, then
-comparing pixel-for-pixel including padding borders. This artificially
-inflated padding resize's error by 100-1000x. All results in this version
-use a corrected ROI-based evaluation. The legacy code is preserved in
-`legacy/` for reference.
+metrics were computed including padding borders in the comparison region,
+artificially inflating padding resize's error by 100–1000x. All results in
+this version use a corrected ROI-based evaluation that measures only the
+content region. The legacy code is preserved in `legacy/` for reference.
+
+The v1 experiment used 50 synthetic images without category or aspect ratio
+labels. The v2 experiment uses a fully crossed factorial design enabling
+interaction analysis — specifically the finding that image content type is
+a strong moderator of the method effect.
