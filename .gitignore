@@ -26,3 +26,10 @@ Thumbs.db
 
 # Real images (privacy)
 frozen_real_images/
+
+# Real image test sets (privacy + size)
+test_sets/real_unsplash/*
+!test_sets/real_unsplash/.gitkeep
+frozen_real_images/
+
+results/single_image_tests/
