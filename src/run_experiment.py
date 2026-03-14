@@ -2,20 +2,15 @@
 #
 # Runs the full resize experiment across all images and methods.
 #
-# For each image in the test directory, applies every resize method,
-# optionally runs the Instagram pipeline on top, computes all metrics,
-# and saves results to a CSV in results/.
+# Supports both synthetic_v1 (flat folder) and synthetic_v2 (category subfolders)
+# test set structures. Extracts category, aspect_ratio, and replicate from
+# v2 filenames automatically for use in the mixed model analysis.
 #
 # Usage:
 #   python experiments/run_experiment.py
+#   python experiments/run_experiment.py --input-dir test_sets/synthetic_v2
 #   python experiments/run_experiment.py --no-instagram
-#   python experiments/run_experiment.py --input-dir frozen_test_images
-#
-# Design principles:
-#   - One row per (image, method, pipeline_variant) combination
-#   - No global state — everything flows through function arguments
-#   - Seam carving is slow; progress is printed so you know it's alive
-#   - Failed images are logged and skipped, not silently dropped
+#   python experiments/run_experiment.py --skip-seam-carving
 
 import os
 import sys
@@ -26,7 +21,6 @@ from datetime import datetime
 import pandas as pd
 from PIL import Image
 
-# Allow running from project root without installing as a package
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.methods import METHODS
@@ -40,12 +34,85 @@ from src.instagram import PIPELINE_VARIANTS
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DEFAULT_INPUT_DIR   = os.path.join(PROJECT_ROOT, "frozen_test_images")
+DEFAULT_INPUT_DIR   = os.path.join(PROJECT_ROOT, "test_sets", "synthetic_v2")
 DEFAULT_RESULTS_DIR = os.path.join(PROJECT_ROOT, "results")
 
-# Instagram target dimensions for preprocessing step
 TARGET_WIDTH  = 1080
 TARGET_HEIGHT = 1080
+
+
+# ---------------------------------------------------------------------------
+# Filename parser
+# ---------------------------------------------------------------------------
+
+def parse_filename(filename: str) -> tuple:
+    """
+    Extract category, aspect_ratio, and replicate from a v2 filename.
+
+    v2 format: {category}_{aspect_ratio}_r{replicate}.png
+    Examples:
+        nebula_portrait_r1.png          -> ("nebula", "portrait", "1")
+        architecture_very_wide_r3.png   -> ("architecture", "very_wide", "3")
+        macro_biology_square_r2.png     -> ("macro_biology", "square", "2")
+        abstract_texture_very_tall_r1.png -> ("abstract_texture", "very_tall", "1")
+
+    v1 format: complex_image_{n}.jpg
+        -> ("synthetic_v1", "unknown", "unknown")
+
+    Returns ("unknown", "unknown", "unknown") for unrecognized formats.
+    """
+    stem = os.path.splitext(filename)[0]
+
+    # v1 pattern
+    if stem.startswith("complex_image_"):
+        return ("synthetic_v1", "unknown", "unknown")
+
+    parts = stem.split("_")
+
+    # Replicate token is last: starts with 'r' followed by digits
+    if len(parts) >= 3 and parts[-1].startswith("r") and parts[-1][1:].isdigit():
+        replicate = parts[-1][1:]
+
+        known_aspects = {"very_wide", "wide", "square", "portrait", "very_tall"}
+
+        # Try two-word aspect ratio first (very_wide, very_tall)
+        if len(parts) >= 4:
+            two_word = f"{parts[-3]}_{parts[-2]}"
+            if two_word in known_aspects:
+                category = "_".join(parts[:-3])
+                return (category, two_word, replicate)
+
+        # Single-word aspect ratio
+        if parts[-2] in known_aspects:
+            category = "_".join(parts[:-2])
+            return (category, parts[-2], replicate)
+
+    return ("unknown", "unknown", "unknown")
+
+
+# ---------------------------------------------------------------------------
+# Image file discovery — supports flat folders and category subfolders
+# ---------------------------------------------------------------------------
+
+def discover_images(input_dir: str) -> list:
+    """
+    Find all images in input_dir.
+    Supports two structures:
+        Flat:      input_dir/*.jpg  (synthetic_v1)
+        Nested:    input_dir/{category}/*.png  (synthetic_v2)
+    Returns list of absolute file paths.
+    """
+    extensions = {".jpg", ".jpeg", ".png"}
+    image_paths = []
+
+    for root, dirs, files in os.walk(input_dir):
+        # Skip hidden directories
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for f in files:
+            if os.path.splitext(f)[1].lower() in extensions:
+                image_paths.append(os.path.join(root, f))
+
+    return sorted(image_paths)
 
 
 # ---------------------------------------------------------------------------
@@ -59,55 +126,39 @@ def run_experiment(
     methods_to_run: list = None,
     skip_seam_carving: bool = False
 ) -> pd.DataFrame:
-    """
-    Run the full experiment and return results as a DataFrame.
 
-    For each image:
-        For each resize method:
-            1. Apply resize method -> preprocessed image
-            2. Compute metrics: preprocessed vs original (preprocessing quality)
-            3. If include_instagram:
-                For each Instagram pipeline variant:
-                    Apply pipeline -> final image
-                    Compute metrics: final vs original (end-to-end quality)
-
-    This gives us two sets of measurements:
-        - preprocessing_only: isolates the resize method's quality
-        - after_instagram:    measures what survives the full pipeline
-
-    The comparison between these two is the scientifically interesting part.
-    """
     if methods_to_run is None:
         methods_to_run = list(METHODS.keys())
 
     if skip_seam_carving and "seam_carving_resize" in methods_to_run:
         print("Skipping seam_carving_resize (--skip-seam-carving flag set)")
-        methods_to_run = [m for m in methods_to_run if m != "seam_carving_resize"]
+        methods_to_run = [m for m in methods_to_run
+                          if m != "seam_carving_resize"]
 
-    image_files = [
-        f for f in os.listdir(input_dir)
-        if f.lower().endswith(('.jpg', '.jpeg', '.png'))
-    ]
+    image_paths = discover_images(input_dir)
 
     print(f"\n{'='*60}")
     print(f"IGPhotoResizer Experiment")
     print(f"{'='*60}")
-    print(f"Input directory:  {input_dir}")
-    print(f"Images found:     {len(image_files)}")
-    print(f"Methods:          {methods_to_run}")
+    print(f"Input directory:    {input_dir}")
+    print(f"Images found:       {len(image_paths)}")
+    print(f"Methods:            {methods_to_run}")
     print(f"Instagram pipeline: {include_instagram}")
     print(f"{'='*60}\n")
 
-    all_results = []
+    all_results  = []
     failed_images = []
 
-    for image_index, image_filename in enumerate(sorted(image_files)):
-        print(f"\n[{image_index + 1}/{len(image_files)}] Processing: {image_filename}")
-        image_path = os.path.join(input_dir, image_filename)
+    for image_index, image_path in enumerate(image_paths):
+        image_filename = os.path.basename(image_path)
+        category, aspect_ratio, replicate = parse_filename(image_filename)
+
+        print(f"\n[{image_index + 1}/{len(image_paths)}] {image_filename}"
+              f"  category={category}  aspect={aspect_ratio}  r={replicate}")
 
         try:
             original = Image.open(image_path).convert("RGB")
-            print(f"  Loaded: {original.size[0]}x{original.size[1]}")
+            print(f"  Loaded: {original.size[0]}×{original.size[1]}")
         except Exception as e:
             print(f"  ERROR loading {image_filename}: {e}")
             failed_images.append(image_filename)
@@ -118,22 +169,22 @@ def run_experiment(
             method_fn = METHODS[method_name]
 
             try:
-                # Step 1: apply resize method
                 preprocessed = method_fn(original, TARGET_WIDTH, TARGET_HEIGHT)
 
-                # Step 2: measure preprocessing quality
                 preprocessing_metrics = compute_all_metrics(
                     original,
                     preprocessed,
                     method_name=method_name,
                     image_name=image_filename
                 )
-                preprocessing_metrics["pipeline"] = "preprocessing_only"
+                preprocessing_metrics["pipeline"]      = "preprocessing_only"
                 preprocessing_metrics["target_width"]  = TARGET_WIDTH
                 preprocessing_metrics["target_height"] = TARGET_HEIGHT
+                preprocessing_metrics["category"]      = category
+                preprocessing_metrics["aspect_ratio"]  = aspect_ratio
+                preprocessing_metrics["replicate"]     = replicate
                 all_results.append(preprocessing_metrics)
 
-                # Step 3: run Instagram pipeline variants
                 if include_instagram:
                     for variant_name, pipeline_fn in PIPELINE_VARIANTS.items():
                         print(f"\n    Pipeline variant: {variant_name}")
@@ -145,9 +196,12 @@ def run_experiment(
                                 method_name=method_name,
                                 image_name=image_filename
                             )
-                            instagram_metrics["pipeline"] = variant_name
+                            instagram_metrics["pipeline"]      = variant_name
                             instagram_metrics["target_width"]  = TARGET_WIDTH
                             instagram_metrics["target_height"] = TARGET_HEIGHT
+                            instagram_metrics["category"]      = category
+                            instagram_metrics["aspect_ratio"]  = aspect_ratio
+                            instagram_metrics["replicate"]     = replicate
                             all_results.append(instagram_metrics)
 
                         except Exception as e:
@@ -160,10 +214,8 @@ def run_experiment(
                 failed_images.append(f"{image_filename}::{method_name}")
                 continue
 
-    # Build results DataFrame
     results_df = pd.DataFrame(all_results)
 
-    # Save to CSV with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_filename = f"experiment_results_{timestamp}.csv"
     output_path = os.path.join(results_dir, output_filename)
@@ -183,7 +235,7 @@ def run_experiment(
 
 
 # ---------------------------------------------------------------------------
-# CLI entry point
+# CLI
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":

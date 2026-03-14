@@ -33,3 +33,4 @@ test_sets/real_unsplash/*
 frozen_real_images/
 
 results/single_image_tests/
+.vscode/

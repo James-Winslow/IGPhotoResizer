@@ -1,4 +1,4 @@
-# experiments/analyze_results.py
+﻿# experiments/analyze_results.py
 #
 # Analyzes experiment results and produces summary statistics and visualizations.
 # Designed to be run after experiments/run_experiment.py has produced a CSV.
@@ -77,7 +77,12 @@ def load_latest_results(results_dir: str, results_file: str = None) -> pd.DataFr
 # ---------------------------------------------------------------------------
 
 def compute_summary(df: pd.DataFrame) -> pd.DataFrame:
-    summary = df.groupby(["method", "pipeline"]).agg(
+    # Use category and aspect_ratio if available (v2 test set)
+    group_cols = ["method", "pipeline"]
+    if "category" in df.columns and df["category"].nunique() > 1:
+        group_cols = ["category", "aspect_ratio", "method", "pipeline"]
+
+    summary = df.groupby(group_cols).agg(
         mean_mse    = ("mse",     "mean"),
         median_mse  = ("mse",     "median"),
         std_mse     = ("mse",     "std"),
@@ -103,7 +108,7 @@ def print_summary(summary: pd.DataFrame):
         print(f"\n--- {PIPELINE_LABELS.get(pipeline, pipeline)} ---")
         for _, row in subset.iterrows():
             print(f"  {row['method']:<25} "
-                  f"MSE: {row['mean_mse']:>8.2f} ± {row['std_mse']:>6.2f}  |  "
+                  f"MSE: {row['mean_mse']:>8.2f} Â± {row['std_mse']:>6.2f}  |  "
                   f"PSNR: {row['mean_psnr']:>6.2f} dB  |  "
                   f"SSIM: {row['mean_ssim']:.6f}")
 
@@ -116,7 +121,7 @@ def run_statistical_tests(df: pd.DataFrame) -> pd.DataFrame:
     """
     Paired tests comparing simple_resize vs padding_resize for each pipeline.
 
-    We use paired tests because each image is processed by both methods —
+    We use paired tests because each image is processed by both methods â€”
     the measurements are not independent. This is the same logic as a
     paired t-test in a crossover clinical trial.
 
@@ -128,7 +133,7 @@ def run_statistical_tests(df: pd.DataFrame) -> pd.DataFrame:
     methods = df["method"].unique()
 
     if len(methods) < 2:
-        print("Only one method found — skipping pairwise tests")
+        print("Only one method found â€” skipping pairwise tests")
         return pd.DataFrame()
 
     method_a = "simple_resize"
@@ -234,7 +239,7 @@ def plot_ssim_by_pipeline(df: pd.DataFrame, output_dir: str):
     ax.set_xticks(range(len(pipelines_present)))
     ax.set_xticklabels([PIPELINE_LABELS.get(p, p) for p in pipelines_present],
                        fontsize=9)
-    ax.set_ylabel("Mean SSIM (± SEM)", fontsize=11)
+    ax.set_ylabel("Mean SSIM (Â± SEM)", fontsize=11)
     ax.set_title("Image Quality Through the Instagram Pipeline\n"
                  "SSIM vs Original (higher = better)",
                  fontsize=13, fontweight="bold")
@@ -354,7 +359,7 @@ def plot_aspect_ratio_vs_degradation(df: pd.DataFrame, output_dir: str):
     padding_standard["aspect_ratio"] = (
         padding_pre["orig_width"] / padding_pre["orig_height"]
     )
-    # Distance from square (1:1) — more extreme = more padding needed
+    # Distance from square (1:1) â€” more extreme = more padding needed
     padding_standard["aspect_distance"] = abs(
         padding_standard["aspect_ratio"] - 1.0
     )
@@ -375,7 +380,7 @@ def plot_aspect_ratio_vs_degradation(df: pd.DataFrame, output_dir: str):
 
     ax.set_xlabel("Aspect Ratio Distance from Square\n(|width/height - 1|)",
                   fontsize=11)
-    ax.set_ylabel("SSIM Degradation\n(preprocessing_only → instagram_standard)",
+    ax.set_ylabel("SSIM Degradation\n(preprocessing_only â†’ instagram_standard)",
                   fontsize=11)
     ax.set_title("Does Aspect Ratio Predict Quality Loss?\nPadding Resize After Instagram",
                  fontsize=12, fontweight="bold")
